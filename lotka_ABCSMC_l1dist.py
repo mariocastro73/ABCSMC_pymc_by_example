@@ -27,14 +27,44 @@ def competition_model(rng, a, b, size=None):
     result = odeint(dX_dt, y0=X0, t=t, rtol=0.01, args=(a_scalar, b_scalar, c, d))
     return result.reshape(-1)
 
+
+def norm1_normalized_distance(epsilon, obs_data, sim_data):
+    """L1 distance with each species normalized by its observed maximum.
+
+    Normalizing by the observed max puts both prey and predator series
+    in a comparable [0, 1] scale, giving equal weight to both populations.
+    Returns log-likelihood via a Laplace-like kernel: -distance / epsilon.
+    """
+    n_times = len(obs_data) // 2
+    obs_2d = obs_data.reshape(n_times, 2)   # (T, 2): col0=prey, col1=predator
+    sim_2d = sim_data.reshape(n_times, 2)
+
+    max_prey = np.max(np.abs(obs_2d[:, 0]))
+    max_pred = np.max(np.abs(obs_2d[:, 1]))
+
+    d_prey = np.sum(np.abs(obs_2d[:, 0] / max_prey - sim_2d[:, 0] / max_prey))
+    d_pred = np.sum(np.abs(obs_2d[:, 1] / max_pred - sim_2d[:, 1] / max_pred))
+
+    return -(d_prey + d_pred) / epsilon
+
+
 # Step 5: Bayesian inference with PyMC
 if __name__ == "__main__":
     with pm.Model() as model_lv:
         # Priors
         a = pm.HalfNormal("a", 1.0)
         b = pm.HalfNormal("b", 1.0)
-        # Likelihood (ABC). Epsilon is the initial tolerance
-        sim = pm.Simulator("sim", competition_model, params=(a, b), epsilon=10, observed=observed)
+        # Likelihood (ABC). With normalization each species contributes values in ~[0,1],
+        # so the combined L1 distance is at most 2*T. epsilon=1 is a reasonable starting
+        # point; pm.sample_smc will adaptively tighten it during sampling.
+        sim = pm.Simulator(
+            "sim",
+            competition_model,
+            params=(a, b),
+            distance=norm1_normalized_distance,
+            epsilon=1,
+            observed=observed,
+        )
         # Inference
         samples = pm.sample_smc(draws=500, chains=4) # Faster for testing
         # Convert to ArviZ InferenceData
@@ -97,6 +127,3 @@ if __name__ == "__main__":
     # plt.figure(figsize=(8, 6))
     az.plot_autocorr(samples)
     plt.show()
-
-
-
