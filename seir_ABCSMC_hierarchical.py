@@ -1,4 +1,6 @@
 import arviz as az
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pymc as pm
@@ -74,7 +76,7 @@ def create_seir_simulator(group_id):
         sigma_scalar = sigma.item() if hasattr(sigma, "item") else float(sigma)
         gamma_scalar = gamma.item() if hasattr(gamma, "item") else float(gamma)
         
-        result = odeint(dX_dt, y0=X0_group, t=t_group, rtol=0.01, 
+        result = odeint(dX_dt, y0=X0_group, t=t_group, rtol=0.05, atol=0.05,
                        args=(beta_scalar, sigma_scalar, gamma_scalar))
         
         # Return columns matching observed data
@@ -122,7 +124,7 @@ with pm.Model() as model_hierarchical:
     
     # Inference
     print("Starting SMC sampling...")
-    samples = pm.sample_smc(draws=1000, chains=4)  # Faster for testing
+    samples = pm.sample_smc(draws=1000, chains=4, threshold=0.3, correlation_threshold=0.1)
     
     # Convert to ArviZ InferenceData
     posterior = samples.posterior.stack(samples=("draw", "chain"))
@@ -177,7 +179,7 @@ for idx, group_id in enumerate(unique_groups):
     ax.plot(t_group, mean_sim[:, 3], linewidth=3, label="mean recovered", c="C2")
     
     # Posterior samples
-    for i in np.random.randint(0, posterior.samples.size/2, 15):
+    for i in np.random.default_rng(42).integers(0, posterior.sizes["samples"] // 2, 15):
         # beta_i = posterior["beta"].values[i, idx]
         # sigma_i = posterior["sigma"].values[i, idx]
         # gamma_i = posterior["gamma"].values[i, idx]
@@ -197,7 +199,8 @@ for idx, group_id in enumerate(unique_groups):
     ax.legend()
 
 plt.tight_layout()
-plt.show()
+plt.savefig("results/seir_hierarchical_predictive.pdf")
+plt.close()
 
 # Plot hyperparameter posteriors
 az.plot_posterior(samples, var_names=["mu_beta", "sigma_beta", "mu_sigma", 
@@ -205,24 +208,28 @@ az.plot_posterior(samples, var_names=["mu_beta", "sigma_beta", "mu_sigma",
                   kind="hist", bins=30)
 plt.suptitle("Hyperparameter Posteriors", y=1.02)
 plt.tight_layout()
-plt.show()
+plt.savefig("results/seir_hierarchical_hyperparams.pdf")
+plt.close()
 
 # Plot group-specific parameter posteriors
 az.plot_posterior(samples, var_names=["beta", "sigma", "gamma"], 
                   kind="hist", bins=30)
 plt.suptitle("Group-Specific Parameter Posteriors", y=1.02)
 plt.tight_layout()
-plt.show()
+plt.savefig("results/seir_hierarchical_group_params.pdf")
+plt.close()
 
 # Plot trace diagnostics
 az.plot_trace(samples, var_names=["mu_beta", "mu_sigma", "mu_gamma",
                                    "beta", "sigma", "gamma"], 
               kind="rank_bars", compact=True)
 plt.tight_layout()
-plt.show()
+plt.savefig("results/seir_hierarchical_trace.pdf")
+plt.close()
 
 # Forest plot comparing parameters across groups
 az.plot_forest(samples, var_names=["beta", "sigma", "gamma"], 
                combined=False, hdi_prob=0.95)
 plt.tight_layout()
-plt.show()
+plt.savefig("results/seir_hierarchical_forest.pdf")
+plt.close()

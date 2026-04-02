@@ -1,4 +1,6 @@
 import arviz as az
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pymc as pm
@@ -24,7 +26,7 @@ def dX_dt(X, t, a, b, c, d):
 def competition_model(rng, a, b, size=None):
     a_scalar = a.item() if hasattr(a, "item") else float(a)
     b_scalar = b.item() if hasattr(b, "item") else float(b)
-    result = odeint(dX_dt, y0=X0, t=t, rtol=0.01, args=(a_scalar, b_scalar, c, d))
+    result = odeint(dX_dt, y0=X0, t=t, rtol=0.05, atol=0.05, args=(a_scalar, b_scalar, c, d))
     return result.reshape(-1)
 
 # Step 5: Bayesian inference with PyMC
@@ -36,7 +38,7 @@ if __name__ == "__main__":
         # Likelihood (ABC). Epsilon is the initial tolerance
         sim = pm.Simulator("sim", competition_model, params=(a, b), epsilon=10, observed=observed)
         # Inference
-        samples = pm.sample_smc(draws=500, chains=4) # Faster for testing
+        samples = pm.sample_smc(draws=500, chains=4, threshold=0.3, correlation_threshold=0.1)
         # Convert to ArviZ InferenceData
         posterior = samples.posterior.stack(samples=("draw", "chain"))
         # post = posterior.to_pandas()
@@ -55,7 +57,7 @@ if __name__ == "__main__":
     ax.plot(t, mean_sim[:, 0], linewidth=3, label="mean prey", c="C0")
     ax.plot(t, mean_sim[:, 1], linewidth=3, label="mean predator", c="C1")
 
-    for i in np.random.randint(0, posterior.samples.size, 75):
+    for i in np.random.default_rng(42).integers(0, posterior.sizes["samples"], 75):
         ai = posterior["a"].values[i]
         bi = posterior["b"].values[i]
         sim_i = odeint(dX_dt, y0=X0, t=t, rtol=0.01, args=(ai, bi, c, d))
@@ -65,17 +67,22 @@ if __name__ == "__main__":
     ax.set_xlabel("time")
     ax.set_ylabel("population")
     ax.legend()
-    plt.show()
+    plt.tight_layout()
+    plt.savefig("results/lotka_predictive.pdf")
+    plt.close()
 
     ## Plot posterior distributions
     az.plot_posterior(samples, kind="hist", bins=30)
-    plt.show()
+    plt.tight_layout()
+    plt.savefig("results/lotka_marginals.pdf")
+    plt.close()
 
     ## Plot diagnostics
     az.plot_trace(samples)
-    # az.plot_trace(samples, kind="rank_bars") # Alternative
-    plt.suptitle(f"Trace Plot");
-    plt.show()
+    plt.suptitle(f"Trace Plot")
+    plt.tight_layout()
+    plt.savefig("results/lotka_trace.pdf")
+    plt.close()
 
     # with variables a and b in variable posterior, plot a heatmap
     plt.hist2d(posterior["a"].values, posterior["b"].values, bins=100, cmap="Blues")
@@ -83,20 +90,22 @@ if __name__ == "__main__":
     plt.xlabel("a")
     plt.ylabel("b")
     plt.title("2D Histogram of Posterior Samples for a and b")
-    plt.show()
+    plt.tight_layout()
+    plt.savefig("results/lotka_hist2d.pdf")
+    plt.close()
 
-    # same but with kde
-    # plt.figure(figsize=(8, 6))
     az.plot_kde(posterior["a"].values, posterior["b"].values, fill_last=True)
-    # az.plot_kde(posterior["a"].values, posterior["b"].values, hdi_probs=[0.05, 0.5, 0.95]) # Alternative
     plt.xlabel("a")
     plt.ylabel("b")
     plt.title("KDE of Posterior Samples for a and b")
-    plt.show()
+    plt.tight_layout()
+    plt.savefig("results/lotka_kde.pdf")
+    plt.close()
 
-    # plt.figure(figsize=(8, 6))
     az.plot_autocorr(samples)
-    plt.show()
+    plt.tight_layout()
+    plt.savefig("results/lotka_autocorr.pdf")
+    plt.close()
 
 
 

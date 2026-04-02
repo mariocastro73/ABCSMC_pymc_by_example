@@ -1,4 +1,6 @@
 import arviz as az
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pymc as pm
@@ -29,7 +31,7 @@ def seir_model(rng, beta, sigma, gamma, size=None):
     beta_scalar = beta.item() if hasattr(beta, "item") else float(beta)
     sigma_scalar = sigma.item() if hasattr(sigma, "item") else float(sigma)
     gamma_scalar = gamma.item() if hasattr(gamma, "item") else float(gamma)
-    result = odeint(dX_dt, y0=X0, t=t, rtol=0.01, args=(beta_scalar, sigma_scalar, gamma_scalar))
+    result = odeint(dX_dt, y0=X0, t=t, rtol=0.05, atol=0.05, args=(beta_scalar, sigma_scalar, gamma_scalar))
     # Return only S, I, R (columns 0, 2, 3) and reshape to 1D
     return result[:, [0, 2, 3]].reshape(-1)
 
@@ -43,7 +45,7 @@ with pm.Model() as model_seir:
     # Likelihood (ABC). Epsilon is the initial tolerance (if the posterior is too narrow, increase it, and the other way around).
     sim = pm.Simulator("sim", seir_model, params=(beta, sigma, gamma), epsilon=0.5, observed=observed)
     # Inference
-    samples = pm.sample_smc(draws=500, chains=4) # Faster for testing
+    samples = pm.sample_smc(draws=500, chains=4, threshold=0.3, correlation_threshold=0.1)
     # Convert to ArviZ InferenceData
     posterior = samples.posterior.stack(samples=("draw", "chain"))
     # post = posterior.to_pandas()
@@ -66,7 +68,7 @@ ax.plot(t, mean_sim[:, 1], linewidth=3, label="mean exposed (unobserved)", c="C3
 ax.plot(t, mean_sim[:, 2], linewidth=3, label="mean infected", c="C1")
 ax.plot(t, mean_sim[:, 3], linewidth=3, label="mean recovered", c="C2")
 
-for i in np.random.randint(0, posterior.samples.size, 75):
+for i in np.random.default_rng(42).integers(0, posterior.sizes["samples"], 75):
     beta_i = posterior["beta"].values[i]
     sigma_i = posterior["sigma"].values[i]
     gamma_i = posterior["gamma"].values[i]
@@ -79,15 +81,21 @@ for i in np.random.randint(0, posterior.samples.size, 75):
 ax.set_xlabel("time")
 ax.set_ylabel("population")
 ax.legend()
-plt.show()
+plt.tight_layout()
+plt.savefig("results/seir_predictive.pdf")
+plt.close()
 
 ## Plot posterior distributions
 # az.plot_posterior(samples)
 az.plot_posterior(samples, kind="hist", bins=30)
-plt.show()
+plt.tight_layout()
+plt.savefig("results/seir_marginals.pdf")
+plt.close()
 
 ## Plot diagnostics
 # az.plot_trace(samples, kind="rank_vlines")
 az.plot_trace(samples, kind="rank_bars")
-plt.show()
+plt.tight_layout()
+plt.savefig("results/seir_trace.pdf")
+plt.close()
 

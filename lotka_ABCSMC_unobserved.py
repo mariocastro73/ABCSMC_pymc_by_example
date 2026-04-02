@@ -1,4 +1,6 @@
 import arviz as az
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pymc as pm
@@ -24,7 +26,7 @@ def dX_dt(X, t, a, b, c, d):
 def competition_model(rng, a, b, size=None):
     a_scalar = a.item() if hasattr(a, "item") else float(a)
     b_scalar = b.item() if hasattr(b, "item") else float(b)
-    result = odeint(dX_dt, y0=X0, t=t, rtol=0.01, args=(a_scalar, b_scalar, c, d))
+    result = odeint(dX_dt, y0=X0, t=t, rtol=0.05, atol=0.05, args=(a_scalar, b_scalar, c, d))
     return result[:, 0]  # Return only the first species (prey)
 
 
@@ -37,7 +39,7 @@ with pm.Model() as model_lv:
     sim = pm.Simulator("sim", competition_model, params=(a, b), epsilon=15, observed=observed)
     # Inference
     # samples = pm.sample_smc()
-    samples = pm.sample_smc(draws=500, chains=4) # Faster for testing
+    samples = pm.sample_smc(draws=500, chains=4, threshold=0.3, correlation_threshold=0.1)
     # Convert to ArviZ InferenceData
     posterior = samples.posterior.stack(samples=("draw", "chain"))
     # post = posterior.to_pandas()
@@ -53,7 +55,7 @@ mean_sim = odeint(dX_dt, y0=X0, t=t, rtol=0.01, args=(mean_a, mean_b, c, d))
 ax.plot(t, mean_sim[:, 0], linewidth=3, label="mean prey", c="C0")
 ax.plot(t, mean_sim[:, 1], linewidth=3, label="mean predator (unobserved)", c="C1")
 
-for i in np.random.randint(0, posterior.samples.size, 75):
+for i in np.random.default_rng(42).integers(0, posterior.sizes["samples"], 75):
     ai = posterior["a"].values[i]
     bi = posterior["b"].values[i]
     sim_i = odeint(dX_dt, y0=X0, t=t, rtol=0.01, args=(ai, bi, c, d))
@@ -63,12 +65,18 @@ for i in np.random.randint(0, posterior.samples.size, 75):
 ax.set_xlabel("time")
 ax.set_ylabel("population")
 ax.legend()
-plt.show()
+plt.tight_layout()
+plt.savefig("results/lotka_unobserved_predictive.pdf")
+plt.close()
 
 ## Plot posterior distributions
 az.plot_posterior(samples)
-plt.show()
+plt.tight_layout()
+plt.savefig("results/lotka_unobserved_marginals.pdf")
+plt.close()
 
 ## Plot diagnostics
 az.plot_trace(samples)
-plt.show()
+plt.tight_layout()
+plt.savefig("results/lotka_unobserved_trace.pdf")
+plt.close()
