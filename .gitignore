@@ -1,3 +1,4 @@
 /.python-version
 /main.py
 /results
+*.sh
